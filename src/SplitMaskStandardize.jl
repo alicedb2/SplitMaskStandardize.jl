@@ -1,10 +1,10 @@
 module SplitMaskStandardize
-    
+
     using DataFrames
     using CSV
     using StatsBase: std, mean
     using Random: shuffle!
-    
+
     import Base: filter
 
     export SMSDataset
@@ -19,9 +19,9 @@ module SplitMaskStandardize
     """
     SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
     SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\\t", shuffle=true, subsample=nothing)
-    
-    Create a dataset object from a DataFrame or a CSV file. 
-    
+
+    Create a dataset object from a DataFrame or a CSV file.
+
     The dataset object is a barebone wrapper over a DataFrame which
     allows to quickly generate training, validation and test splits,
     extract presence and absence data, and standardize the data.
@@ -46,12 +46,14 @@ module SplitMaskStandardize
     When 2 splits are specified the dataset is split into
     training and test sets.
 
-    When an arbitrary number of splits are specified, the first 
+    When an arbitrary number of splits are specified, the first
     and last split is considered as the training and test sets.
     The splits can be access using an index, i.e. dataset[i]
-    
+
     Properties/fields of the underlying DataFrames are exposed that are not
-    "presence", "absence", "standardize", "training", "validation", "test", "filter",
+    "idx", "mask", "filter"
+    "presence", "absence", "presmask" "absmask", "presidx", "absidx",
+    "standardize", "training", "validation", "test",
     or internal fields "__df", "__slices", "__zero", "__scale".
 
     # Basic examples
@@ -85,9 +87,9 @@ module SplitMaskStandardize
          2 │  -95.25    35.75        1.0      1.0      1.0      0.0      1.0
        ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮    ⋱
      33129 │  -97.25    46.9167      1.0      1.0      1.0      1.0      1.0
-    
-    
-    # presence(:col) and absence(:col) mask by casting Bool and !Bool on 
+
+
+    # presence(:col) and absence(:col) mask by casting Bool and !Bool on
     # the elements of :col, but a custom mask can be provided using filter
 
     julia> dataset.filter(:sp1, x -> x > 10)
@@ -100,7 +102,7 @@ module SplitMaskStandardize
        ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮    ⋱
      39024 │ -108.25    28.0833      0.0      0.0      0.0      0.0      0.0
     ```
-    
+
     # Examples of chaining
     ```julia-repl
     dataset.absence(:column)   # :column must contain true/false/1/0 values
@@ -109,9 +111,9 @@ module SplitMaskStandardize
     dataset.absence(:species)(:col1, :col2, :col3, :col4)   # return a 4xN matrix of predictors associated
                                                             # with absences of :species
 
-    dataset.standardize(:col1, :col2, :col3)   # Return a copy of the dataset where col1, col2, and col3 
+    dataset.standardize(:col1, :col2, :col3)   # Return a copy of the dataset where col1, col2, and col3
                                                # have been standardized against the training set
-    
+
     dataset.standarize(:col1, :col2)(:col1, :col2, :col3)   # Return a 3xN matrix of stacked columns across all splits
                                                             # where col1 and col2 have been standardized against the training set
 
@@ -119,7 +121,7 @@ module SplitMaskStandardize
     dataset.validation.absence(:species).standardize(:col1, :col2)    # dataframe at presences or absences of :species in the
                                                                       # validation set where col1 and col2 have been
                                                                       # standardized against the training set
-    
+
     dataset.training.presence(:species1).presence(:species2)   # Return simultaneous presences of both species in training set
 
     dataset.test.presence(:species1).absence(:species1)        # Return empty dataset
@@ -127,10 +129,10 @@ module SplitMaskStandardize
     ```
     """
     function SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
-        
+
         sum(splits) > 0 || throw(ArgumentError("At least one split must be greater than 0"))
 
-        if subsample !== nothing 
+        if subsample !== nothing
             if subsample isa Integer
                 subsample >= nrow(df) && throw(ArgumentError("Subsample is greater than the number of rows in the DataFrame"))
                 subsample <= 0 && throw(ArgumentError("Subsample must be greater than 0"))
@@ -141,7 +143,13 @@ module SplitMaskStandardize
             end
         end
 
-        conflicts = intersect(propertynames(df), [:training, :validation, :test, :filter, :presence, :absence, :standardize, :df, :__slices, :__zero, :__scale])
+        _reserved = [:training, :validation, :test,
+                     :idx, :mask, :filter,
+                     :presence, :absence, :standardize,
+                     :presidx, :absidx, :presmask, :absmask,
+                     :__df, :__slices, :__zero, :__scale]
+
+        conflicts = intersect(propertynames(df), _reserved)
         if !isempty(conflicts)
             @warn "Conflicting properties: $conflicts\nThose properties of the DataFrame will not be accessible."
         end
@@ -159,12 +167,20 @@ module SplitMaskStandardize
         elseif subsample isa Float64
             df = df[1:round(Int, subsample*nrow(df)), :]
         end
-        
+
         bnds = cumsum(vcat(0, splits / sum(splits)))
         __slices = [round(Int, bnds[i]*nrow(df)+1):round(Int, bnds[i+1]*nrow(df)) for i in 1:length(splits)]
 
-        __zero = mapcols(mean, df)
-        __scale = mapcols(std, df)
+
+        goodvalues = Base.filter(x -> x !== nothing && x !== missing && isfinite(x))
+
+        numeric = (<:).(eltype.(eachcol(df)), Union{Number, Missing})
+        notallmissing = .!(<:).(eltype.(eachcol(df)), Missing)
+        twoormorefinite = length.(goodvalues.(eachcol(df))) .>= 2 # For standard deviation
+        validmask = numeric .& notallmissing .& twoormorefinite
+
+        __zero = mapcols(col -> mean(Vector{Number}(goodvalues(col))), df[:, validmask])
+        __scale = mapcols(col -> std(Vector{Number}(goodvalues(col))), df[:, validmask])
 
         return SMSDataset(df, __slices, __zero, __scale)
 
@@ -176,7 +192,7 @@ module SplitMaskStandardize
         print(io, ")")
     end
 
-    function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing) 
+    function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing)
         return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
     end
 
@@ -194,12 +210,20 @@ module SplitMaskStandardize
             return SMSDataset(dataset.__df[dataset.__slices[2], :], nothing, dataset.__zero, dataset.__scale)
         elseif name === :test
             return SMSDataset(dataset.__df[dataset.__slices[length(dataset.__slices)], :], nothing, dataset.__zero, dataset.__scale)
+        elseif name === :idx
+            return idx(dataset)
+        elseif name === :mask
+            return mask(dataset)
         elseif name === :filter
             return filter(dataset)
         elseif name === :presence
             return presence(dataset)
         elseif name === :absence
             return absence(dataset)
+        elseif name === :presmask
+            return presmask(dataset)
+        elseif name === :absmask
+            return absmask(dataset)
         elseif name === :standardize
             return standardize(dataset)
         else
@@ -208,19 +232,29 @@ module SplitMaskStandardize
     end
 
     (dataset::SMSDataset)(cols::Symbol...) = length(cols) == 1 ? dataset.__df[:, cols[1]] : stack([dataset.__df[:, col] for col in cols], dims=1)
-    
+
+    idx(dataset::SMSDataset) = (col::Symbol, by=Bool) -> findall(by.(dataset.__df[:, col]))
+    mask(dataset::SMSDataset) = (col::Symbol, by=Bool) -> by.(dataset.__df[:, col])
     filter(dataset::SMSDataset) = (col::Symbol, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
 
     presence(dataset::SMSDataset) = (col::Symbol) -> filter(dataset)(col, Bool)
+    presmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, Bool)
+    presidx(dataset::SMSDataset) = (col::Symbol) -> idx(dataset)(col, Bool)
 
     absence(dataset::SMSDataset) = (col::Symbol) -> filter(dataset)(col, x -> !Bool(x))
+    absmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, x -> !Bool(x))
+    absidx(dataset::SMSDataset) = (col::Symbol) -> idx(dataset)(col, x -> !Bool(x))
 
     function standardize(dataset::SMSDataset)
         function fun(cols::Symbol...)
             length(cols) > 0 || throw(ArgumentError("At least one column must be provided"))
             ret = copy(dataset.__df)
             for col in cols
-                transform!(ret, col => (x -> (x .- dataset.__zero[1, col]) ./ dataset.__scale[1, col]) => col)
+                if col in propertynames(dataset.__scale)
+                    transform!(ret, col => (x -> (x .- dataset.__zero[1, col]) ./ dataset.__scale[1, col]) => col)
+                else
+                    @warn "Column $col is not numeric with 2 or more finite values and will not be standardized"
+                end
             end
             return SMSDataset(ret, dataset.__slices, dataset.__zero, dataset.__scale)
         end
