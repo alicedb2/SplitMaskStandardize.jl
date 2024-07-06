@@ -212,10 +212,6 @@ module SplitMaskStandardize
         return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
     end
 
-    function Base.iterate(dataset::SMSDataset)
-        return dataset, 2
-    end
-
     function Base.iterate(dataset::SMSDataset, state=1)
         state > length(dataset.__slices) && return nothing
         return dataset[state], state+1
