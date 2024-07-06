@@ -64,15 +64,31 @@
   julia> dataset.presence(:sp1)   # :sp1 must contain true/false/1/0 values
                                   # true/1 are considered as a presence
   SMSDataset(33129×81 DataFrame
-     Row │ lon        lat      sp1      sp2      sp3      sp4      sp5      sp6   ⋯
-         │ Float64    Float64  Float64  Float64  Float64  Float64  Float64  Int64 ⋯
-  ───────┼─────────────────────────────────────────────────────────────────────────
-       1 │  -86.4167  39.75        1.0      1.0      1.0      1.0      1.0      1 ⋯
-       2 │  -76.5833  37.4167      1.0      1.0      1.0      1.0      0.0      1
-     ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮        ⋮  ⋱
-   33129 │ -112.417   38.4167      1.0      0.0      0.0      0.0      0.0      0
-                                                 67 columns and 33126 rows omitted)
+     Row │ lon        lat      sp1      sp2      sp3      sp4      sp5     ⋯
+         │ Float64    Float64  Float64  Float64  Float64  Float64  Float64 ⋯
+  ───────┼──────────────────────────────────────────────────────────────────
+       1 │  -84.25    33.4167      1.0      1.0      1.0      1.0      1.0 ⋯
+       2 │  -95.25    35.75        1.0      1.0      1.0      0.0      1.0
+     ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮    ⋱
+   33129 │  -97.25    46.9167      1.0      1.0      1.0      1.0      1.0
+  )
   
+  
+  # By default presence(:col) and absence(:col) mask by casting Bool on 
+  # the elements of :col, but a custom mask can be provided in case the 
+  # column contains some other type of values.
+
+  julia> dataset.presence(:sp1, x -> x > 10)
+  SMSDataset(39024×81 DataFrame
+     Row │ lon        lat      sp1      sp2      sp3      sp4      sp5     ⋯
+         │ Float64    Float64  Float64  Float64  Float64  Float64  Float64 ⋯
+  ───────┼──────────────────────────────────────────────────────────────────
+       1 │  -84.25    33.4167      1.0      1.0      1.0      1.0      1.0 ⋯
+       2 │  -95.25    35.75        1.0      1.0      1.0      0.0      1.0
+     ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮    ⋱
+   39024 │ -108.25    28.0833      0.0      0.0      0.0      0.0      0.0
+  )
+  ```  
 
   Examples of chaining
   ≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡

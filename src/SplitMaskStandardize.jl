@@ -74,15 +74,28 @@ module SplitMaskStandardize
     julia> dataset.presence(:sp1)   # :sp1 must contain true/false/1/0 values
                                     # true/1 are considered as a presence
     SMSDataset(33129×81 DataFrame
-       Row │ lon        lat      sp1      sp2      sp3      sp4      sp5      sp6   ⋯
-           │ Float64    Float64  Float64  Float64  Float64  Float64  Float64  Int64 ⋯
-    ───────┼─────────────────────────────────────────────────────────────────────────
-         1 │  -86.4167  39.75        1.0      1.0      1.0      1.0      1.0      1 ⋯
-         2 │  -76.5833  37.4167      1.0      1.0      1.0      1.0      0.0      1
-       ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮        ⋮  ⋱
-     33129 │ -112.417   38.4167      1.0      0.0      0.0      0.0      0.0      0
-                                                   67 columns and 33126 rows omitted)
+       Row │ lon        lat      sp1      sp2      sp3      sp4      sp5     ⋯
+           │ Float64    Float64  Float64  Float64  Float64  Float64  Float64 ⋯
+    ───────┼──────────────────────────────────────────────────────────────────
+         1 │  -84.25    33.4167      1.0      1.0      1.0      1.0      1.0 ⋯
+         2 │  -95.25    35.75        1.0      1.0      1.0      0.0      1.0
+       ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮    ⋱
+     33129 │  -97.25    46.9167      1.0      1.0      1.0      1.0      1.0
     
+    
+    # By default presence(:col) and absence(:col) mask by casting Bool on 
+    # the elements of :col, but a custom mask can be provided in case the 
+    # column contains some other type of values.
+
+    julia> dataset.presence(:sp1, x -> x > 10)
+    SMSDataset(39024×81 DataFrame
+       Row │ lon        lat      sp1      sp2      sp3      sp4      sp5     ⋯
+           │ Float64    Float64  Float64  Float64  Float64  Float64  Float64 ⋯
+    ───────┼──────────────────────────────────────────────────────────────────
+         1 │  -84.25    33.4167      1.0      1.0      1.0      1.0      1.0 ⋯
+         2 │  -95.25    35.75        1.0      1.0      1.0      0.0      1.0
+       ⋮   │     ⋮         ⋮        ⋮        ⋮        ⋮        ⋮        ⋮    ⋱
+     39024 │ -108.25    28.0833      0.0      0.0      0.0      0.0      0.0
     ```
     
     # Examples of chaining
@@ -152,6 +165,12 @@ module SplitMaskStandardize
 
     end
 
+    function Base.show(io::IO, dataset::SMSDataset)
+        print(io, "SMSDataset(")
+        Base.show(io, dataset.__df)
+        print(io, ")")
+    end
+
     function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing) 
         return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
     end
@@ -187,22 +206,16 @@ module SplitMaskStandardize
 
     (dataset::SMSDataset)(cols::Symbol...) = length(cols) == 1 ? dataset.__df[:, cols[1]] : stack([dataset.__df[:, col] for col in cols], dims=1)
 
-    presence(col::Symbol) = dataset -> SMSDataset(dataset.__df[Bool.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
-    presence(dataset::SMSDataset) = col -> SMSDataset(dataset.__df[Bool.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
-    presence(dataset::SMSDataset, name::Symbol) = presence(dataset)(name)
+    presence(col::Symbol) = (dataset, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
+    presence(dataset::SMSDataset) = (col, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
+    presence(dataset::SMSDataset, name::Symbol, by=Bool) = presence(dataset)(name, by)
     
-    absence(col::Symbol) = dataset -> SMSDataset(dataset.__df[.!Bool.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
-    absence(dataset::SMSDataset) = col -> SMSDataset(dataset.__df[.!Bool.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
-    absence(dataset::SMSDataset, name::Symbol) = absence(dataset)(name)
+    absence(col::Symbol) = (dataset, by=Bool) -> SMSDataset(dataset.__df[.!by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
+    absence(dataset::SMSDataset) = (col, by=Bool) -> SMSDataset(dataset.__df[.!by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
+    absence(dataset::SMSDataset, name::Symbol, by=Bool) = absence(dataset, by)(name)
 
     standarize(col::Symbol) = dataset -> (dataset.__df[:, col] .- dataset.__zero[1, col]) ./ dataset.__scale[1, col]
     standardize(dataset::SMSDataset) = (cols::Symbol...) -> length(cols) == 1 ? (dataset.__df[:, cols[1]] .- dataset.__zero[1, cols[1]]) ./ dataset.__scale[1, cols[1]] : stack([(dataset.__df[:, col] .- dataset.__zero[1, col]) ./ dataset.__scale[1, col] for col in cols], dims=1)
     standardize(dataset::SMSDataset, name::Symbol) = standardize(dataset)(name)
-
-    function Base.show(io::IO, dataset::SMSDataset)
-        print(io, "SMSDataset(")
-        Base.show(io, dataset.__df)
-        print(io, ")")
-    end
 
 end
