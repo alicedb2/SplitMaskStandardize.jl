@@ -133,7 +133,7 @@ module SplitMaskStandardize
         end
 
         if shuffle
-            df = Random.shuffle!(df)
+            df = shuffle!(df)
         end
 
         if subsample isa Integer
