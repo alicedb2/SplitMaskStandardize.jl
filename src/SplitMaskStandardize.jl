@@ -5,8 +5,6 @@ module SplitMaskStandardize
     using StatsBase: std, mean
     using Random: shuffle!
 
-    import Base: filter
-
     export SMSDataset
 
     struct SMSDataset
@@ -56,6 +54,7 @@ module SplitMaskStandardize
     validation = dataset.validation
     test = dataset.test
     nth_split = dataset[n]
+    splits = [split for split in dataset]
 
     julia> dataset(:col)             # Return a column from the underlying DataFrame as a vector
     39024-element Vector{Float64}:
@@ -119,20 +118,23 @@ module SplitMaskStandardize
 
     dataset.test.presence(:species1).absence(:species1)        # Return empty dataset
 
-    dataset.idx(:col, ismissing)               # Return indices of missing values in :col
-    dataset.test.presidx(:species)             # Return indices of presences of :species in the test set
-    dataset.training.absidx(:species)          # Return indices of absences of :species in the training set
+    dataset.idx(:col, ismissing)                  # Return indices of missing values in :col
+    dataset.test.presidx(:species)                # Return indices of presences of :species in the test set
+    dataset.training.absidx(:species)             # Return indices of absences of :species in the training set
 
-    dataset.presmask(:species)                 # Return a mask of presences of :species in the dataset
-    dataset.absmask(:species)                  # Return a mask of absences of :species in the dataset
+    dataset.presmask(:species)                    # Return a mask of presences of :species in the dataset
+    dataset.absmask(:species)                     # Return a mask of absences of :species in the dataset
 
-    dataset.training.mask(:col, x -> x > 10)   # Return a mask of training set where :col > 10
-    dataset.filter(:col, x -> x > 10)          # Return a dataset where :col > 10
+    dataset.training.mask(:col, x -> x > 10)      # Return a mask of training set where :col > 10
+    dataset.filter(:col, x -> x > 10)             # Return a dataset where :col > 10
+
+    SMSDataset(dataset.training, splits=[1, 1])   # Further split the training set into training and test sets.
+                                                  # Note that the dataset will be restandardized against
+                                                  # the new training set, which might be undesirable.
+
     ```
     """
     function SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
-
-        sum(splits) > 0 || throw(ArgumentError("At least one split must be greater than 0"))
 
         if subsample !== nothing
             if subsample isa Integer
@@ -180,11 +182,9 @@ module SplitMaskStandardize
 
         goodvalues = Base.filter(x -> x !== nothing && x isa Number && isfinite(x))
 
-        numeric = (<:).(eltype.(eachcol(df)), Union{Number, Missing})
-        notallmissing = .!(<:).(eltype.(eachcol(df)), Missing)
-        notallnothing = .!(<:).(eltype.(eachcol(df)), Nothing)
+        possiblynumeric = any.(map.(x -> (<:).(x, Number), gettypes.(eltype.(eachcol(df)))))
         twoormorefinite = length.(goodvalues.(eachcol(df))) .>= 2 # For standard deviation
-        validmask = numeric .& notallmissing .& notallnothing .& twoormorefinite
+        validmask = possiblynumeric .& twoormorefinite
 
         __zero = mapcols(col -> mean(Vector{Number}(goodvalues(col))), df[:, validmask])
         __scale = mapcols(col -> std(Vector{Number}(goodvalues(col))), df[:, validmask])
@@ -193,10 +193,19 @@ module SplitMaskStandardize
 
     end
 
+    function SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
+        length(dataset) == 0 || throw(ArgumentError("Can only split a dataset with no splits"))
+        return SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
+    end
+
+    gettypes(u::Union) = [u.a; gettypes(u.b)]
+    gettypes(u) = [u]
+
     function Base.show(io::IO, dataset::SMSDataset)
         print(io, "SMSDataset(")
         Base.show(io, dataset.__df)
-        print(io, ")")
+        println()
+        print(io, ") containing $(dataset.__slices !== nothing ? "$(length(dataset)) splits of sizes $(length.(dataset.__slices))" : "no splits")")
     end
 
     function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing)
@@ -218,10 +227,10 @@ module SplitMaskStandardize
     end
 
     function Base.length(dataset::SMSDataset)
-        return length(dataset.__slices)
+        return dataset.__slices !== nothing ? length(dataset.__slices) : 0
     end
 
-    function Base.firstindex(dataset::SMSDataset)
+    function Base.firstindex(::SMSDataset)
         return 1
     end
 
@@ -264,7 +273,7 @@ module SplitMaskStandardize
 
     idx(dataset::SMSDataset) = (col::Symbol, by=Bool) -> findall(by.(dataset.__df[:, col]))
     mask(dataset::SMSDataset) = (col::Symbol, by=Bool) -> by.(dataset.__df[:, col])
-    filter(dataset::SMSDataset) = (col::Symbol, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
+    Base.filter(dataset::SMSDataset) = (col::Symbol, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
 
     presence(dataset::SMSDataset) = (col::Symbol) -> filter(dataset)(col, Bool)
     presmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, Bool)
@@ -282,7 +291,7 @@ module SplitMaskStandardize
                 if col in propertynames(dataset.__scale)
                     transform!(ret, col => (x -> (x .- dataset.__zero[1, col]) ./ dataset.__scale[1, col]) => col)
                 else
-                    @warn "Column $col is not numeric with 2 or more finite values and will not be standardized"
+                    @warn "Column $col is not numeric or doesn't contains 2 or more finite values and will not be standardized"
                 end
             end
             return SMSDataset(ret, dataset.__slices, dataset.__zero, dataset.__scale)
