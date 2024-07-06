@@ -46,7 +46,7 @@ module SplitMaskStandardize
 
     ## Reserved properties/fields
     Properties/fields of the underlying DataFrames are exposed that are not
-    "idx", "mask", "filter", "presence", "absence", "presmask" "absmask", "presidx", "absidx", "standardize", "training", "validation", "test", or internal fields "\\_\\_df", "\\_\\_slices", "\\_\\_zero", "\\_\\_scale".
+    "idx", "mask", "filter", "presence", "absence", "presmask" "absmask", "presidx", "absidx", "standardize", "training", "validation", "test", "split", or internal fields "\\_\\_df", "\\_\\_slices", "\\_\\_zero", "\\_\\_scale".
 
     # Basic examples
     ```julia-repl
@@ -148,7 +148,7 @@ module SplitMaskStandardize
         end
 
         _reserved = [:training, :validation, :test,
-                     :idx, :mask, :filter,
+                     :idx, :mask, :filter, :split,
                      :presence, :absence, :standardize,
                      :presidx, :absidx, :presmask, :absmask,
                      :__df, :__slices, :__zero, :__scale]
