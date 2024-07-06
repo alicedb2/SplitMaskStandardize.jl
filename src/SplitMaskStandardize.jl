@@ -128,9 +128,9 @@ module SplitMaskStandardize
     dataset.training.mask(:col, x -> x > 10)      # Return a mask of training set where :col > 10
     dataset.filter(:col, x -> x > 10)             # Return a dataset where :col > 10
 
-    SMSDataset(dataset.training, splits=[1, 1])   # Further split the training set into training and test sets.
-                                                  # The standardization is preserved across the splits.
-
+    dataset.training.split(1, 1)                 # Further split a dataset with no splits
+    SMSDataset(dataset[4], splits=[1, 1])        # The standardization is preserved across the splits by default
+                                                 # but could be turned off by passing conservestandardization=false
     ```
     """
     function SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
@@ -196,12 +196,14 @@ module SplitMaskStandardize
         return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
     end
 
-    function SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
+    function SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true, conservestrandardization=true)
         length(dataset) == 0 || throw(ArgumentError("Can only split a dataset with no splits"))
         __zero, __scale = dataset.__zero, dataset.__scale
         newdataset = SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
-        newdataset.__zero .= __zero
-        newdataset.__scale .= __scale
+        if conservestrandardization
+            newdataset.__zero .= __zero
+            newdataset.__scale .= __scale
+        end
         return newdataset
     end
 
@@ -284,7 +286,7 @@ module SplitMaskStandardize
     absmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, x -> !Bool(x))
     absidx(dataset::SMSDataset) = (col::Symbol) -> idx(dataset)(col, x -> !Bool(x))
 
-    split(dataset::SMSDataset) = (splits...; shuffle=true, subsample=nothing) -> SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample)
+    split(dataset::SMSDataset) = (splits...; shuffle=true, subsample=nothing, conservestandardization=true) -> SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample, conservestandardization=conservestandardization)
 
     function standardize(dataset::SMSDataset)
         function fun(cols::Symbol...)
