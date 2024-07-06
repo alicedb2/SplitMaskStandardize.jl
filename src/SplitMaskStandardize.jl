@@ -17,7 +17,8 @@ module SplitMaskStandardize
     """
     SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
     SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\\t", shuffle=true, subsample=nothing)
-
+    SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true, conservestrandardization=true)
+    
     Create a dataset object from a DataFrame or a CSV file.
 
     The dataset object is a barebone wrapper over a DataFrame which
