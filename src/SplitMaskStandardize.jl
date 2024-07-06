@@ -127,8 +127,8 @@ module SplitMaskStandardize
 
         if subsample !== nothing 
             if subsample isa Integer
-                nrow(df) >= subsample || throw(ArgumentError("Subsample is greater than the number of rows in the DataFrame"))
-                subsample <= 0 || throw(ArgumentError("Subsample must be greater than 0"))
+                nrow(df) >= subsample && throw(ArgumentError("Subsample is greater than the number of rows in the DataFrame"))
+                subsample <= 0 && throw(ArgumentError("Subsample must be greater than 0"))
             elseif subsample isa Float64 && !(0 < subsample <= 1)
                 throw(ArgumentError("Subsample must be a fraction between 0 and 1"))
             else
