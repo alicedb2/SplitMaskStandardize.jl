@@ -129,8 +129,7 @@ module SplitMaskStandardize
     dataset.filter(:col, x -> x > 10)             # Return a dataset where :col > 10
 
     SMSDataset(dataset.training, splits=[1, 1])   # Further split the training set into training and test sets.
-                                                  # Note that the dataset will be restandardized against
-                                                  # the new training set, which might be undesirable.
+                                                  # The standardization is preserved across the splits.
 
     ```
     """
@@ -193,9 +192,17 @@ module SplitMaskStandardize
 
     end
 
+    function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing)
+        return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
+    end
+
     function SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
         length(dataset) == 0 || throw(ArgumentError("Can only split a dataset with no splits"))
-        return SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
+        __zero, __scale = dataset.__zero, dataset.__scale
+        newdataset = SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
+        newdataset.__zero .= __zero
+        newdataset.__scale .= __scale
+        return newdataset
     end
 
     gettypes(u::Union) = [u.a; gettypes(u.b)]
@@ -208,12 +215,8 @@ module SplitMaskStandardize
         print(io, ") containing $(dataset.__slices !== nothing ? "$(length(dataset)) splits of sizes $(length.(dataset.__slices))" : "no splits")")
     end
 
-    function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing)
-        return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
-    end
-
     function Base.iterate(dataset::SMSDataset, state=1)
-        state > length(dataset.__slices) && return nothing
+        (dataset.__slices === nothing || state > length(dataset.__slices)) && return nothing
         return dataset[state], state+1
     end
 
@@ -260,6 +263,8 @@ module SplitMaskStandardize
             return absmask(dataset)
         elseif name === :standardize
             return standardize(dataset)
+        elseif name === :split
+             return split(dataset)
         else
             return getproperty(dataset.__df, name)
         end
@@ -278,6 +283,8 @@ module SplitMaskStandardize
     absence(dataset::SMSDataset) = (col::Symbol) -> filter(dataset)(col, x -> !Bool(x))
     absmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, x -> !Bool(x))
     absidx(dataset::SMSDataset) = (col::Symbol) -> idx(dataset)(col, x -> !Bool(x))
+
+    split(dataset::SMSDataset) = (splits...; shuffle=true, subsample=nothing) -> SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample)
 
     function standardize(dataset::SMSDataset)
         function fun(cols::Symbol...)
