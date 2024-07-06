@@ -277,7 +277,7 @@ module SplitMaskStandardize
 
     idx(dataset::SMSDataset) = (col::Symbol, by=Bool) -> findall(by.(dataset.__df[:, col]))
     mask(dataset::SMSDataset) = (col::Symbol, by=Bool) -> by.(dataset.__df[:, col])
-    Base.filter(dataset::SMSDataset) = (col::Symbol, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], dataset.__slices, dataset.__zero, dataset.__scale)
+    Base.filter(dataset::SMSDataset) = (col::Symbol, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], nothing, dataset.__zero, dataset.__scale)
 
     presence(dataset::SMSDataset) = (col::Symbol) -> filter(dataset)(col, Bool)
     presmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, Bool)
