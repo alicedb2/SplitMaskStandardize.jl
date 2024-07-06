@@ -36,25 +36,18 @@ module SplitMaskStandardize
     - `subsample`: Number (integer) or fraction (float) of rows to subsample from the dataset.
     - `returncopy`: Return a copy of the DataFrame object.
 
-    Splits can be specified either as a vector of any numbers
-    which are normalized to fractions.
-    For example [2, 1, 2] will result in [0.4, 0.2, 0.4] splits.
+    ## Splits
+    - Splits are given as a vector of any numbers which are normalized to fractions.
+      For example [2, 1, 2] will result in [0.4, 0.2, 0.4] splits.
+    - When 3 splits are specified, the dataset is split into training, validation, and test sets.
+    - When 2 splits are specified the dataset is split into training and test sets.
+    - When an arbitrary number of splits are specified, the first
+      and last split are considered as the training and test sets.
+      The splits can be access using an index, i.e. dataset[i]
 
-    When 3 splits are specified, the dataset is split into
-    training, validation, and test sets.
-
-    When 2 splits are specified the dataset is split into
-    training and test sets.
-
-    When an arbitrary number of splits are specified, the first
-    and last split is considered as the training and test sets.
-    The splits can be access using an index, i.e. dataset[i]
-
+    ## Reserved properties/fields
     Properties/fields of the underlying DataFrames are exposed that are not
-    "idx", "mask", "filter"
-    "presence", "absence", "presmask" "absmask", "presidx", "absidx",
-    "standardize", "training", "validation", "test",
-    or internal fields "__df", "__slices", "__zero", "__scale".
+    "idx", "mask", "filter", "presence", "absence", "presmask" "absmask", "presidx", "absidx", "standardize", "training", "validation", "test", or internal fields "\\_\\_df", "\\_\\_slices", "\\_\\_zero", "\\_\\_scale".
 
     # Basic examples
     ```julia-repl
@@ -126,6 +119,15 @@ module SplitMaskStandardize
 
     dataset.test.presence(:species1).absence(:species1)        # Return empty dataset
 
+    dataset.idx(:col, ismissing)               # Return indices of missing values in :col
+    dataset.test.presidx(:species)             # Return indices of presences of :species in the test set
+    dataset.training.absidx(:species)          # Return indices of absences of :species in the training set
+
+    dataset.presmask(:species)                 # Return a mask of presences of :species in the dataset
+    dataset.absmask(:species)                  # Return a mask of absences of :species in the dataset
+
+    dataset.training.mask(:col, x -> x > 10)   # Return a mask of training set where :col > 10
+    dataset.filter(:col, x -> x > 10)          # Return a dataset where :col > 10
     ```
     """
     function SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
@@ -168,16 +170,21 @@ module SplitMaskStandardize
             df = df[1:round(Int, subsample*nrow(df)), :]
         end
 
-        bnds = cumsum(vcat(0, splits / sum(splits)))
-        __slices = [round(Int, bnds[i]*nrow(df)+1):round(Int, bnds[i+1]*nrow(df)) for i in 1:length(splits)]
+        if splits === nothing || length(splits) <= 1
+            @warn "Only 1 or no split specified, the dataset will not be split"
+            __slices = nothing
+        else
+            bnds = cumsum(vcat(0, splits / sum(splits)))
+            __slices = [round(Int, bnds[i]*nrow(df)+1):round(Int, bnds[i+1]*nrow(df)) for i in 1:length(splits)]
+        end
 
-
-        goodvalues = Base.filter(x -> x !== nothing && x !== missing && isfinite(x))
+        goodvalues = Base.filter(x -> x !== nothing && x isa Number && isfinite(x))
 
         numeric = (<:).(eltype.(eachcol(df)), Union{Number, Missing})
         notallmissing = .!(<:).(eltype.(eachcol(df)), Missing)
+        notallnothing = .!(<:).(eltype.(eachcol(df)), Nothing)
         twoormorefinite = length.(goodvalues.(eachcol(df))) .>= 2 # For standard deviation
-        validmask = numeric .& notallmissing .& twoormorefinite
+        validmask = numeric .& notallmissing .& notallnothing .& twoormorefinite
 
         __zero = mapcols(col -> mean(Vector{Number}(goodvalues(col))), df[:, validmask])
         __scale = mapcols(col -> std(Vector{Number}(goodvalues(col))), df[:, validmask])
@@ -196,8 +203,30 @@ module SplitMaskStandardize
         return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
     end
 
+    function Base.iterate(dataset::SMSDataset)
+        return dataset, 2
+    end
+
+    function Base.iterate(dataset::SMSDataset, state=1)
+        state > length(dataset.__slices) && return nothing
+        return dataset[state], state+1
+    end
+
     function Base.getindex(dataset::SMSDataset, i::Int)
-        return dataset.__df[dataset.__slices[i], :]
+        isnothing(dataset.__slices) && throw(ArgumentError("Dataset has no splits"))
+        return SMSDataset(dataset.__df[dataset.__slices[i], :], nothing, dataset.__zero, dataset.__scale)
+    end
+
+    function Base.length(dataset::SMSDataset)
+        return length(dataset.__slices)
+    end
+
+    function Base.firstindex(dataset::SMSDataset)
+        return 1
+    end
+
+    function Base.lastindex(dataset::SMSDataset)
+        return length(dataset)
     end
 
     function Base.getproperty(dataset::SMSDataset, name::Symbol)
