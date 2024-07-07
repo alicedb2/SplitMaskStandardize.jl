@@ -17,7 +17,7 @@ module SplitMaskStandardize
     """
     SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
     SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\\t", shuffle=true, subsample=nothing)
-    SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true, conservestrandardization=true)
+    SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
     
     Create a dataset object from a DataFrame or a CSV file.
 
@@ -130,8 +130,7 @@ module SplitMaskStandardize
     dataset.filter(:col, x -> x > 10)             # Return a dataset where :col > 10
 
     dataset.training.split(1, 1)                 # Further split a dataset with no splits
-    SMSDataset(dataset[4], splits=[1, 1])        # The standardization is preserved across the splits by default
-                                                 # but could be turned off by passing conservestandardization=false
+    SMSDataset(dataset[4], splits=[1, 1])
     ```
     """
     function SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
@@ -201,10 +200,18 @@ module SplitMaskStandardize
         length(dataset) == 0 || throw(ArgumentError("Can only split a dataset with no splits"))
         __zero, __scale = dataset.__zero, dataset.__scale
         newdataset = SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
-        if conservestrandardization
-            newdataset.__zero .= __zero
-            newdataset.__scale .= __scale
+
+        # If the new dataset is empty the __zero and __scale will
+        # be empty. Deal with both non-empty and empty cases in-place
+        # since SMSDataset is immutable.
+        append!(newdataset.__zero, __zero)
+        append!(newdataset.__scale, __scale)
+        if nrow(newdataset.__zero) > 1
+            @assert nrow(newdataset.__scale) == 2
+            delete!(newdataset.__zero, 1)
+            delete!(newdataset.__scale, 1)
         end
+
         return newdataset
     end
 
@@ -304,7 +311,7 @@ module SplitMaskStandardize
     absmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, x -> !Bool(x))
     absidx(dataset::SMSDataset) = (col::Symbol) -> idx(dataset)(col, x -> !Bool(x))
 
-    split(dataset::SMSDataset) = (splits...; shuffle=true, subsample=nothing, conservestandardization=true) -> SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample, conservestandardization=conservestandardization)
+    split(dataset::SMSDataset) = (splits...; shuffle=true, subsample=nothing) -> SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample)
 
     function standardize(dataset::SMSDataset)
         function fun(cols::Symbol...)
