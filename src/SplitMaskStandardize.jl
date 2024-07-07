@@ -251,11 +251,13 @@ module SplitMaskStandardize
         if name in [:__df, :__slices, :__zero, :__scale]
             return getfield(dataset, name)
         elseif name === :training
+            dataset.__slices === nothing && throw(ArgumentError("Dataset has no splits"))
             return SMSDataset(dataset.__df[dataset.__slices[1], :], nothing, dataset.__zero, dataset.__scale)
         elseif name === :validation
-            length(dataset.__slices) < 3 && throw(ArgumentError("Dataset has less than 3 splits"))
+            dataset.__slices !== nothing && length(dataset.__slices) < 3 && throw(ArgumentError("Dataset has less than 3 splits"))
             return SMSDataset(dataset.__df[dataset.__slices[2], :], nothing, dataset.__zero, dataset.__scale)
         elseif name === :test
+            dataset.__slices !== nothing && length(dataset.__slices) < 2 && throw(ArgumentError("Dataset has less than 2 splits"))
             return SMSDataset(dataset.__df[dataset.__slices[length(dataset.__slices)], :], nothing, dataset.__zero, dataset.__scale)
         elseif name === :idx
             return idx(dataset)
