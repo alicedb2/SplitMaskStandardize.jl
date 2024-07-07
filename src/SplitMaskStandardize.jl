@@ -285,6 +285,7 @@ module SplitMaskStandardize
             if dataset.__slices === nothing
                 return SMSDataset(newdf, nothing, dataset.__zero, dataset.__scale)
             else
+                # Behold! The reslicing!
                 sliceidx = intersect.(Ref(_idx), dataset.__slices)
                 offsets = cumsum(vcat(0, length.(sliceidx)))[begin:end-1]
                 unitranges = map(x->firstindex(x):lastindex(x), sliceidx)
