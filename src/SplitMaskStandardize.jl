@@ -7,7 +7,7 @@ module SplitMaskStandardize
 
     export SMSDataset
 
-    export mask, idx, filter, value
+    export mask, idx, filter, val
     export training, validation, test, nth
     export presence, presmask, presidx
     export absence, absmask, absidx
@@ -78,7 +78,7 @@ module SplitMaskStandardize
       ⋮
       2.759552240371704
 
-    # This is equivalent to dataset |> value(:col)
+    # This is equivalent to dataset |> val(:col)
 
     julia> dataset(:col1, :col2)
     2×39024 Matrix{Float64}:
@@ -118,13 +118,13 @@ module SplitMaskStandardize
     dataset |> absence(:species)   # false/0 are considered as an absence
 
     dataset.absence(:species)(:col1, :col2, :col3, :col4)               # return a 4xN matrix of predictors associated
-    dataset |> absence(:species) |> value(:col1, :col2, :col3, :col4)   # with absences of :species
+    dataset |> absence(:species) |> val(:col1, :col2, :col3, :col4)     # with absences of :species
 
     dataset.standardize(:col1, :col2, :col3)      # Return a copy of the dataset where col1, col2, and col3
     dataset |> standardize(:col1, :col2, :col3)   # have been standardized against the training set
 
     dataset.standarize(:col1, :col2)(:col1, :col2, :col3)               # Return a 3xN matrix of stacked columns across all splits
-    dataset |> standarize(:col1, :col2) |> value(:col1, :col2, :col3)   # where col1 and col2 have been standardized against the training set
+    dataset |> standarize(:col1, :col2) |> val(:col1, :col2, :col3)     # where col1 and col2 have been standardized against the training set
 
     dataset.validation.presence(:species).standardize(:col1, :col2)     # Return dataset containing a copy of the underlying
     dataset.validation.absence(:species).standardize(:col1, :col2)      # dataframe at presences or absences of :species in the
@@ -156,13 +156,13 @@ module SplitMaskStandardize
     dataset.absmask(:species)                     # Return a mask of absences of :species in the dataset
     dataset |> absmask(:species)
 
-    dataset.training.mask(:col, x -> x > 10)           # Return a mask of training set where :col > 10
+    dataset.training.mask(:col, x -> x > 10)           # Return a mask over the training set where :col > 10
     dataset |> training() |> mask(:col, x -> x > 10)
 
     dataset.filter(:col, x -> x > 10)             # Return a dataset where :col > 10
     dataset |> filter(:col, x -> x > 10)
 
-    dataset.training.split(1, 1)                 # Further split a dataset with no splits
+    dataset.training.split(1, 1)                  # Further split a dataset with no splits
     dataset |> training() |> split(1, 1)
     ```
     """
@@ -273,6 +273,12 @@ module SplitMaskStandardize
         return SMSDataset(dataset.__df[dataset.__slices[i], :], nothing, dataset.__zero, dataset.__scale)
     end
 
+    Base.getindex(dataset::SMSDataset, ::Colon) = [s for s in dataset]
+
+    function Base.getindex(dataset::SMSDataset, x...)
+        return dataset.__df[x...]
+    end
+
     function Base.length(dataset::SMSDataset)
         return dataset.__slices !== nothing ? length(dataset.__slices) : 0
     end
@@ -321,7 +327,7 @@ module SplitMaskStandardize
     end
 
     (dataset::SMSDataset)(cols::Symbol...) = length(cols) == 1 ? dataset.__df[:, cols[1]] : stack([dataset.__df[:, col] for col in cols], dims=1)
-    value(cols::Symbol...) = (dataset::SMSDataset) -> dataset(cols...)
+    val(cols::Symbol...) = (dataset::SMSDataset) -> dataset(cols...)
 
     training() = (dataset::SMSDataset) -> dataset.training
     validation() = (dataset::SMSDataset) -> dataset.validation
