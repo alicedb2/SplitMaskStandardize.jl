@@ -211,12 +211,6 @@ module SplitMaskStandardize
     gettypes(u::Union) = [u.a; gettypes(u.b)]
     gettypes(u) = [u]
     
-    function chunkslices(sizes)
-        boundaries = cumsum(vcat(1, sizes))
-        sls = [boundaries[i]:boundaries[i+1]-1 for i in 1:length(sizes)]
-        return sls
-    end
-
     function Base.show(io::IO, dataset::SMSDataset)
         print(io, "SMSDataset(")
         Base.show(io, dataset.__df)
