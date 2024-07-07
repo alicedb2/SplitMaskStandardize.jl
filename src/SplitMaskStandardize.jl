@@ -277,6 +277,7 @@ module SplitMaskStandardize
 
     idx(dataset::SMSDataset) = (col::Symbol, by=Bool) -> findall(by.(dataset.__df[:, col]))
     mask(dataset::SMSDataset) = (col::Symbol, by=Bool) -> by.(dataset.__df[:, col])
+    
     function Base.filter(dataset::SMSDataset)
         function fun(col::Symbol, by=Bool)
             _idx = idx(dataset)(col, by)
@@ -285,9 +286,10 @@ module SplitMaskStandardize
                 return SMSDataset(newdf, nothing, dataset.__zero, dataset.__scale)
             else
                 sliceidx = intersect.(Ref(_idx), dataset.__slices)
-                shifts = cumsum(vcat(0, length.(sliceidx)))[begin:end-1]
-                newslices = ((ur, s) -> (ur) .+ s).(map(x->firstindex(x):lastindex(x), sliceidx), shifts)
-                return SMSDataset(newdf, newslices, dataset.__zero, dataset.__scale)
+                offsets = cumsum(vcat(0, length.(sliceidx)))[begin:end-1]
+                unitranges = map(x->firstindex(x):lastindex(x), sliceidx)
+                offset_unitranges = ((ur, s) -> (ur) .+ s).(unitranges, offsets)
+                return SMSDataset(newdf, offset_unitranges, dataset.__zero, dataset.__scale)
             end
         end
         return fun
