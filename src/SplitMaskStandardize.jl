@@ -6,7 +6,7 @@ module SplitMaskStandardize
     using Random: shuffle!
 
     export SMSDataset
-    
+
     export mask, idx, filter, value
     export training, validation, test, nth
     export presence, presmask, presidx
@@ -24,7 +24,7 @@ module SplitMaskStandardize
     SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
     SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\\t", shuffle=true, subsample=nothing)
     SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
-    
+
     Create a dataset object from a DataFrame or a CSV file.
 
     The dataset object is a barebone wrapper over a DataFrame which
@@ -57,7 +57,9 @@ module SplitMaskStandardize
     # Basic examples
     ```julia-repl
     dataset = SMSDataset("data.csv")
-    
+    dataset = SMSDataset(dataframe)
+    dataset = dataframe |> SMSDataset()
+
     trainingset = dataset.training
     trainingset = dataset |> training
 
@@ -66,7 +68,7 @@ module SplitMaskStandardize
 
     nth_split = dataset[n]
     nth_split = dataset |> nth(n)
-    
+
     allsplits = [split for split in dataset]
 
     julia> dataset(:col)             # Return a column from the underlying DataFrame as a vector
@@ -141,22 +143,22 @@ module SplitMaskStandardize
 
     dataset.idx(:col, ismissing)                  # Return indices of missing values in :col
     dataset |> idx(:col, ismissing)
-    
+
     dataset.test.presidx(:species)                # Return indices of presences of :species in the test set
     dataset |> test() |> presidx(:species)
-    
+
     dataset.training.absidx(:species)             # Return indices of absences of :species in the training set
     dataset |> training() |> absidx(:species)
-    
+
     dataset.presmask(:species)                    # Return a mask of presences of :species in the dataset
     dataset |> presmask(:species)
-    
+
     dataset.absmask(:species)                     # Return a mask of absences of :species in the dataset
     dataset |> absmask(:species)
 
     dataset.training.mask(:col, x -> x > 10)           # Return a mask of training set where :col > 10
     dataset |> training() |> mask(:col, x -> x > 10)
-    
+
     dataset.filter(:col, x -> x > 10)             # Return a dataset where :col > 10
     dataset |> filter(:col, x -> x > 10)
 
@@ -223,6 +225,8 @@ module SplitMaskStandardize
 
     end
 
+    SMSDataset(splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true) = (df::AbstractDataFrame) -> SMSDataset(df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
+
     function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing)
         return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
     end
@@ -233,7 +237,7 @@ module SplitMaskStandardize
         newdataset = SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
 
         # This is quite the corner case but
-        # if the new dataset is empty, usually because of 
+        # if the new dataset is empty, usually because of
         # an agressive filter() followed by a split,
         # the __zero and __scale fields will be empty.
         # Deal with both non-empty and empty cases in-place
@@ -251,7 +255,7 @@ module SplitMaskStandardize
 
     gettypes(u::Union) = [u.a; gettypes(u.b)]
     gettypes(u) = [u]
-    
+
     function Base.show(io::IO, dataset::SMSDataset)
         print(io, "SMSDataset(")
         Base.show(io, dataset.__df)
@@ -332,7 +336,7 @@ module SplitMaskStandardize
     idx(dataset::SMSDataset, col::Symbol, by=Bool) = findall(mask(dataset, col, by))
     idx(dataset::SMSDataset) = (col::Symbol, by=Bool) -> idx(dataset, col, by)
     idx(col::Symbol, by=Bool) = (dataset::SMSDataset) -> idx(dataset, col, by)
-    
+
     Base.filter(dataset::SMSDataset) = (col::Symbol, by::Function) -> filter(dataset, col, by)
     Base.filter(col::Symbol, by::Function) = (dataset::SMSDataset) -> filter(dataset, col, by)
     function Base.filter(dataset::SMSDataset, col::Symbol, by::Function)
@@ -357,7 +361,7 @@ module SplitMaskStandardize
     presmask(dataset::SMSDataset, col::Symbol) = mask(dataset, col, Bool)
     presmask(dataset::SMSDataset) = (col::Symbol) -> presmask(dataset, col)
     presmask(col::Symbol) = (dataset::SMSDataset) -> presmask(dataset, col)
-    
+
     presidx(dataset::SMSDataset, col::Symbol) = idx(dataset, col, Bool)
     presidx(dataset::SMSDataset) = (col::Symbol) -> presidx(dataset, col)
     presidx(col::Symbol) = (dataset::SMSDataset) -> presidx(dataset, col)
@@ -374,9 +378,9 @@ module SplitMaskStandardize
     absidx(dataset::SMSDataset) = (col::Symbol) -> absidx(dataset, col)
     absidx(col::Symbol) = (dataset::SMSDataset) -> absidx(dataset, col)
 
-    Base.split(dataset::SMSDataset, splits...; shuffle=true, subsample=nothing) = SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample, returncopy=false)
-    Base.split(dataset::SMSDataset) = (splits...; shuffle=true, subsample=nothing) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
-    Base.split(splits...; shuffle=true, subsample=nothing) = (dataset::SMSDataset) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
+    Base.split(dataset::SMSDataset, splits::Int...; shuffle=true, subsample=nothing) = SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample, returncopy=false)
+    Base.split(dataset::SMSDataset) = (splits::Int...; shuffle=true, subsample=nothing) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
+    Base.split(splits::Int...; shuffle=true, subsample=nothing) = (dataset::SMSDataset) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
 
     standardize(dataset::SMSDataset) = (cols::Symbol...) -> standardize(dataset, cols...)
     standardize(cols::Symbol...) = (dataset::SMSDataset) -> standardize(dataset, cols...)
