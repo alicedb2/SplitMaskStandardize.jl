@@ -1,4 +1,4 @@
-module SplitMaskStandardize
+ module SplitMaskStandardize
 
     using DataFrames
     using CSV
@@ -58,13 +58,10 @@ module SplitMaskStandardize
     ```julia-repl
     dataset = SMSDataset("data.csv")
     dataset = SMSDataset(dataframe)
-    dataset = dataframe |> SMSDataset()
 
     trainingset = dataset.training
-    trainingset = dataset |> training
-
     validationset = dataset.validation
-    validationset = dataset |> validation
+    testset = dataset.test
 
     nth_split = dataset[n]
     nth_split = dataset |> nth(n)
@@ -225,8 +222,6 @@ module SplitMaskStandardize
 
     end
 
-    SMSDataset(splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true) = (df::AbstractDataFrame) -> SMSDataset(df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
-
     function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing)
         return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
     end
@@ -275,9 +270,9 @@ module SplitMaskStandardize
 
     Base.getindex(dataset::SMSDataset, ::Colon) = [s for s in dataset]
 
-    function Base.getindex(dataset::SMSDataset, x...)
-        return dataset.__df[x...]
-    end
+    # function Base.getindex(dataset::SMSDataset, x...)
+    #     return dataset.__df[x...]
+    # end
 
     function Base.length(dataset::SMSDataset)
         return dataset.__slices !== nothing ? length(dataset.__slices) : 0
@@ -388,11 +383,11 @@ module SplitMaskStandardize
     Base.split(dataset::SMSDataset) = (splits::Int...; shuffle=true, subsample=nothing) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
     Base.split(splits::Int...; shuffle=true, subsample=nothing) = (dataset::SMSDataset) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
 
-    standardize(dataset::SMSDataset) = (cols::Symbol...) -> standardize(dataset, cols...)
-    standardize(cols::Symbol...) = (dataset::SMSDataset) -> standardize(dataset, cols...)
+    standardize(dataset::SMSDataset) = (cols::Union{Symbol, Colon}...) -> standardize(dataset, cols...)
+    standardize(cols::Union{Symbol, Colon}...) = (dataset::SMSDataset) -> standardize(dataset, cols...)
+    standardize(dataset::SMSDataset, ::Colon) = standardize(dataset, propertynames(dataset.__zero)...)
+
     function standardize(dataset::SMSDataset, cols::Symbol...)
-        # function fun(cols::Symbol...)
-        length(cols) > 0 || throw(ArgumentError("At least one column must be provided"))
         ret = copy(dataset.__df)
         for col in cols
             if col in propertynames(dataset.__scale)
