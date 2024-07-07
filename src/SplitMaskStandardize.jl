@@ -9,7 +9,7 @@ module SplitMaskStandardize
 
     struct SMSDataset
         __df::AbstractDataFrame
-        __slices::Union{Nothing, Vector{UnitRange{Int64}}}
+        __slices::Union{Nothing, Vector{UnitRange{Int64}}, Vector{Vector{Int64}}}
         __zero::AbstractDataFrame
         __scale::AbstractDataFrame
     end
@@ -210,6 +210,12 @@ module SplitMaskStandardize
 
     gettypes(u::Union) = [u.a; gettypes(u.b)]
     gettypes(u) = [u]
+    
+    function chunkslices(sizes)
+        boundaries = cumsum(vcat(1, sizes))
+        sls = [boundaries[i]:boundaries[i+1]-1 for i in 1:length(sizes)]
+        return sls
+    end
 
     function Base.show(io::IO, dataset::SMSDataset)
         print(io, "SMSDataset(")
@@ -277,7 +283,21 @@ module SplitMaskStandardize
 
     idx(dataset::SMSDataset) = (col::Symbol, by=Bool) -> findall(by.(dataset.__df[:, col]))
     mask(dataset::SMSDataset) = (col::Symbol, by=Bool) -> by.(dataset.__df[:, col])
-    Base.filter(dataset::SMSDataset) = (col::Symbol, by=Bool) -> SMSDataset(dataset.__df[by.(dataset.__df[:, col]), :], nothing, dataset.__zero, dataset.__scale)
+    function Base.filter(dataset::SMSDataset)
+        function fun(col::Symbol, by=Bool)
+            _idx = idx(dataset)(col, by)
+            newdf = dataset.__df[_idx, :]
+            if dataset.__slices === nothing
+                return SMSDataset(newdf, nothing, dataset.__zero, dataset.__scale)
+            else
+                sliceidx = intersect.(Ref(_idx), dataset.__slices)
+                shifts = cumsum(vcat(0, length.(sliceidx)))[begin:end-1]
+                newslices = ((ur, s) -> (ur) .+ s).(map(x->firstindex(x):lastindex(x), sliceidx), shifts)
+                return SMSDataset(newdf, newslices, dataset.__zero, dataset.__scale)
+            end
+        end
+        return fun
+    end
 
     presence(dataset::SMSDataset) = (col::Symbol) -> filter(dataset)(col, Bool)
     presmask(dataset::SMSDataset) = (col::Symbol) -> mask(dataset)(col, Bool)
