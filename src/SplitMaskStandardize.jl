@@ -341,9 +341,9 @@
     idx(dataset::SMSDataset) = (col::Symbol, by=Bool) -> idx(dataset, col, by)
     idx(col::Symbol, by=Bool) = (dataset::SMSDataset) -> idx(dataset, col, by)
 
-    Base.filter(dataset::SMSDataset) = (col::Symbol, by::Function) -> filter(dataset, col, by)
-    Base.filter(col::Symbol, by::Function) = (dataset::SMSDataset) -> filter(dataset, col, by)
-    function Base.filter(dataset::SMSDataset, col::Symbol, by::Function)
+    Base.filter(dataset::SMSDataset) = (col::Symbol, by) -> filter(dataset, col, by)
+    Base.filter(col::Symbol, by) = (dataset::SMSDataset) -> filter(dataset, col, by)
+    function Base.filter(dataset::SMSDataset, col::Symbol, by)
         _idx = idx(dataset, col, by)
         newdf = dataset.__df[_idx, :]
         if dataset.__slices === nothing
