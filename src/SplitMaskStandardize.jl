@@ -120,6 +120,9 @@
     dataset.standardize(:col1, :col2, :col3)      # Return a copy of the dataset where col1, col2, and col3
     dataset |> standardize(:col1, :col2, :col3)   # have been standardized against the training set
 
+    dataset.standardize(:)          # Standardize all numeric columns
+    dataset |> standardize(:)                     
+
     dataset.standarize(:col1, :col2)(:col1, :col2, :col3)               # Return a 3xN matrix of stacked columns across all splits
     dataset |> standarize(:col1, :col2) |> val(:col1, :col2, :col3)     # where col1 and col2 have been standardized against the training set
 
@@ -388,15 +391,20 @@
     standardize(dataset::SMSDataset, ::Colon) = standardize(dataset, propertynames(dataset.__zero)...)
 
     function standardize(dataset::SMSDataset, cols::Symbol...)
-        ret = copy(dataset.__df)
+        newdf = copy(dataset.__df)
+        newzero = copy(dataset.__zero)
+        newscale = copy(dataset.__scale)
         for col in cols
             if col in propertynames(dataset.__scale)
-                transform!(ret, col => (x -> (x .- dataset.__zero[1, col]) ./ dataset.__scale[1, col]) => col)
+                transform!(newdf, col => (x -> (x .- dataset.__zero[1, col]) ./ dataset.__scale[1, col]) => col)
+                transform!(newzero, col => (x -> 0.0) => col)
+                transform!(newscale, col => (x -> 1.0) => col)
             else
                 @warn "Column $col is not numeric or doesn't contains 2 or more finite values and will not be standardized"
             end
         end
-        return SMSDataset(ret, dataset.__slices, dataset.__zero, dataset.__scale)
+
+        return SMSDataset(newdf, dataset.__slices, newzero, newscale)
     end
 
 end
