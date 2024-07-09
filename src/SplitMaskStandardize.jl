@@ -3,7 +3,7 @@
     using DataFrames
     using CSV
     using StatsBase: std, mean
-    using Random: shuffle!
+    using Random: shuffle!, default_rng, MersenneTwister, AbstractRNG
 
     export SMSDataset
 
@@ -13,11 +13,18 @@
     export absence, absmask, absidx
     export standardize, split
 
+
+    const _reserved = [:training, :validation, :test,
+                       :idx, :mask, :filter, :split,
+                       :presence, :absence, :standardize,
+                       :presidx, :absidx, :presmask, :absmask]
+
     struct SMSDataset
         __df::AbstractDataFrame
         __slices::Union{Nothing, Vector{UnitRange{Int64}}, Vector{Vector{Int64}}}
         __zero::AbstractDataFrame
         __scale::AbstractDataFrame
+        __rng::AbstractRNG
     end
 
     """
@@ -166,7 +173,17 @@
     dataset |> training() |> split(1, 1)
     ```
     """
-    function SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true)
+    function SMSDataset(df::AbstractDataFrame; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true, seed=nothing)
+
+        if seed === nothing
+            rng = default_rng()
+        elseif seed isa Int
+            rng = MersenneTwister(seed)
+        elseif seed isa AbstractRNG
+            rng = seed
+        else
+            throw(ArgumentError("Seed must be nothing (default rng), an integer, or a random number generator"))
+        end
 
         if subsample !== nothing
             if subsample isa Integer
@@ -179,13 +196,7 @@
             end
         end
 
-        _reserved = [:training, :validation, :test,
-                     :idx, :mask, :filter, :split,
-                     :presence, :absence, :standardize,
-                     :presidx, :absidx, :presmask, :absmask,
-                     :__df, :__slices, :__zero, :__scale]
-
-        conflicts = intersect(propertynames(df), _reserved)
+        conflicts = intersect(propertynames(df), fieldnames(SMSDataset), _reserved)
         if !isempty(conflicts)
             @warn "Conflicting properties: $conflicts\nThose properties of the DataFrame will not be accessible."
         end
@@ -195,7 +206,7 @@
         end
 
         if shuffle
-            df = shuffle!(df)
+            df = shuffle!(rng, df)
         end
 
         if subsample isa Integer
@@ -221,18 +232,18 @@
         __zero = mapcols(col -> mean(Vector{Number}(goodvalues(col))), df[:, validmask])
         __scale = mapcols(col -> std(Vector{Number}(goodvalues(col))), df[:, validmask])
 
-        return SMSDataset(df, __slices, __zero, __scale)
+        return SMSDataset(df, __slices, __zero, __scale, rng)
 
     end
 
-    function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing)
-        return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false)
+    function SMSDataset(csvfile::AbstractString; splits=[1/3, 1/3, 1/3], delim="\t", shuffle=true, subsample=nothing, seed=nothing)
+        return SMSDataset(DataFrame(CSV.File(csvfile, delim=delim)), splits=splits, shuffle=shuffle, subsample=subsample, returncopy=false, seed=seed)
     end
 
-    function SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true, conservestrandardization=true)
+    function SMSDataset(dataset::SMSDataset; splits=[1/3, 1/3, 1/3], shuffle=true, subsample=nothing, returncopy=true, seed=nothing)
         length(dataset) == 0 || throw(ArgumentError("Can only split a dataset with no splits"))
         __zero, __scale = dataset.__zero, dataset.__scale
-        newdataset = SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy)
+        newdataset = SMSDataset(dataset.__df, splits=splits, shuffle=shuffle, subsample=subsample, returncopy=returncopy, seed=seed)
 
         # This is quite the corner case but
         # if the new dataset is empty, usually because of
@@ -273,9 +284,9 @@
 
     Base.getindex(dataset::SMSDataset, ::Colon) = [s for s in dataset]
 
-    # function Base.getindex(dataset::SMSDataset, x...)
-    #     return dataset.__df[x...]
-    # end
+    function Base.getindex(dataset::SMSDataset, x...)
+        return dataset.__df[x...]
+    end
 
     function Base.length(dataset::SMSDataset)
         return dataset.__slices !== nothing ? length(dataset.__slices) : 0
@@ -290,35 +301,10 @@
     end
 
     function Base.getproperty(dataset::SMSDataset, name::Symbol)
-        if name in [:__df, :__slices, :__zero, :__scale]
+        if name in fieldnames(SMSDataset)
             return getfield(dataset, name)
-        elseif name === :training
-            dataset.__slices === nothing && throw(ArgumentError("Dataset has no splits"))
-            return SMSDataset(dataset.__df[dataset.__slices[1], :], nothing, dataset.__zero, dataset.__scale)
-        elseif name === :validation
-            dataset.__slices !== nothing && length(dataset.__slices) < 3 && throw(ArgumentError("Dataset has less than 3 splits"))
-            return SMSDataset(dataset.__df[dataset.__slices[2], :], nothing, dataset.__zero, dataset.__scale)
-        elseif name === :test
-            dataset.__slices !== nothing && length(dataset.__slices) < 2 && throw(ArgumentError("Dataset has less than 2 splits"))
-            return SMSDataset(dataset.__df[dataset.__slices[length(dataset.__slices)], :], nothing, dataset.__zero, dataset.__scale)
-        elseif name === :idx
-            return idx(dataset)
-        elseif name === :mask
-            return mask(dataset)
-        elseif name === :filter
-            return filter(dataset)
-        elseif name === :presence
-            return presence(dataset)
-        elseif name === :absence
-            return absence(dataset)
-        elseif name === :presmask
-            return presmask(dataset)
-        elseif name === :absmask
-            return absmask(dataset)
-        elseif name === :standardize
-            return standardize(dataset)
-        elseif name === :split
-             return split(dataset)
+        elseif name in _reserved
+            return getfield(SplitMaskStandardize, name)(dataset)
         else
             return getproperty(dataset.__df, name)
         end
@@ -327,9 +313,25 @@
     (dataset::SMSDataset)(cols::Symbol...) = length(cols) == 1 ? dataset.__df[:, cols[1]] : stack([dataset.__df[:, col] for col in cols], dims=1)
     val(cols::Symbol...) = (dataset::SMSDataset) -> dataset(cols...)
 
-    training() = (dataset::SMSDataset) -> dataset.training
-    validation() = (dataset::SMSDataset) -> dataset.validation
-    test() = (dataset::SMSDataset) -> dataset.test
+    function training(dataset::SMSDataset)
+        dataset.__slices === nothing && throw(ArgumentError("Dataset has no splits"))
+        return SMSDataset(dataset.__df[dataset.__slices[1], :], nothing, dataset.__zero, dataset.__scale, dataset.__rng)
+    end
+
+    function validation(dataset::SMSDataset)
+        (dataset.__slices === nothing || (dataset.__slices !== nothing && length(dataset.__slices) < 3)) && throw(ArgumentError("Dataset has less than 3 splits"))
+        return SMSDataset(dataset.__df[dataset.__slices[2], :], nothing, dataset.__zero, dataset.__scale, dataset.__rng)
+    end
+
+    function test(dataset::SMSDataset)
+        (dataset.__slices === nothing || (dataset.__slices !== nothing && length(dataset.__slices) < 2)) && throw(ArgumentError("Dataset has less than 2 splits"))
+        return SMSDataset(dataset.__df[dataset.__slices[length(dataset.__slices)], :], nothing, dataset.__zero, dataset.__scale, dataset.__rng)
+    end
+
+    training() = (dataset::SMSDataset) -> training(dataset)
+    validation() = (dataset::SMSDataset) -> validation(dataset)
+    test() = (dataset::SMSDataset) -> test(dataset)
+    
     nth(dataset::SMSDataset, n::Int) = dataset[n]
     nth(n::Int) = (dataset::SMSDataset) -> nth(dataset, n)
 
@@ -347,14 +349,14 @@
         _idx = idx(dataset, col, by)
         newdf = dataset.__df[_idx, :]
         if dataset.__slices === nothing
-            return SMSDataset(newdf, nothing, dataset.__zero, dataset.__scale)
+            return SMSDataset(newdf, nothing, dataset.__zero, dataset.__scale, dataset.__rng)
         else
             # Behold! The reslicing!
             sliceidx = intersect.(Ref(_idx), dataset.__slices)
             offsets = cumsum(vcat(0, length.(sliceidx)))[begin:end-1]
             unitranges = map(x->firstindex(x):lastindex(x), sliceidx)
             offset_unitranges = ((ur, s) -> (ur) .+ s).(unitranges, offsets)
-            return SMSDataset(newdf, offset_unitranges, dataset.__zero, dataset.__scale)
+            return SMSDataset(newdf, offset_unitranges, dataset.__zero, dataset.__scale, dataset.__rng)
         end
     end
 
@@ -382,7 +384,7 @@
     absidx(dataset::SMSDataset) = (col::Symbol) -> absidx(dataset, col)
     absidx(col::Symbol) = (dataset::SMSDataset) -> absidx(dataset, col)
 
-    Base.split(dataset::SMSDataset, splits::Int...; shuffle=true, subsample=nothing) = SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample, returncopy=false)
+    Base.split(dataset::SMSDataset, splits::Int...; shuffle=true, subsample=nothing) = SMSDataset(dataset, splits=collect(splits), shuffle=shuffle, subsample=subsample, returncopy=false, seed=dataset.__rng)
     Base.split(dataset::SMSDataset) = (splits::Int...; shuffle=true, subsample=nothing) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
     Base.split(splits::Int...; shuffle=true, subsample=nothing) = (dataset::SMSDataset) -> split(dataset, splits...; shuffle=shuffle, subsample=subsample)
 
@@ -404,7 +406,7 @@
             end
         end
 
-        return SMSDataset(newdf, dataset.__slices, newzero, newscale)
+        return SMSDataset(newdf, dataset.__slices, newzero, newscale, dataset.__rng)
     end
 
 end
