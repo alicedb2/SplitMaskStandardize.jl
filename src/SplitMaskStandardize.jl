@@ -223,7 +223,7 @@
             __slices = [round(Int, bnds[i]*nrow(df)+1):round(Int, bnds[i+1]*nrow(df)) for i in 1:length(splits)]
         end
 
-        goodvalues = Base.filter(x -> x !== nothing && x isa Number && isfinite(x))
+        goodvalues = Base.filter(x -> (x isa Number) && isfinite(x))
 
         possiblynumeric = any.(map.(x -> (<:).(x, Number), gettypes.(eltype.(eachcol(df)))))
         twoormorefinite = length.(goodvalues.(eachcol(df))) .>= 2 # For standard deviation
